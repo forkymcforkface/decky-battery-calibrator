@@ -19,6 +19,31 @@ class CalibrationPhase(Enum):
 
 
 class CalibrationEngine:
+    """Fuel gauge calibration via discharge-recharge cycle.
+    
+    FSM Design:
+        IDLE
+          ↓ user clicks "start"
+        UNPLUG_AND_DRAIN (set limit to 100%, wait for low battery)
+          ↓ battery capacity ≤ drain_threshold (default 5%) AND unplugged
+        PLUG_IN_AND_CHARGE (wait for 100% charge)
+          ↓ battery capacity ≥ 100% AND plugged in
+        COMPLETE (restore original limit)
+    
+    Timeout: If any phase lasts >48h, auto-complete (safety valve)
+    
+    Design decisions:
+    - Callbacks (on_progress, on_done) instead of awaiting result
+      → Non-blocking, integrates with event loop
+    - State stored as instance variables
+      → Easy to persist/restore on crash (see main.py: _recover_calibration)
+    - drain_threshold configurable (default 5%)
+      → Some users want to calibrate down to 1%, others 10%
+    
+    TODO(v1.1): Add low-battery warning notifications
+    TODO(v1.2): Support automatic calibration on low-battery detection
+    """
+    
     def __init__(
         self,
         charge_control: ChargeControl,
@@ -102,15 +127,14 @@ class CalibrationEngine:
                     self._timeout_task.cancel()
                 if self._on_done:
                     self._on_done("complete", None)
-            elif self._on_progress:
-                self._on_progress("charging", cap)
 
     async def _timeout_watchdog(self) -> None:
         try:
             await asyncio.sleep(CALIBRATION_TIMEOUT_HOURS * 3600)
-            self._phase = CalibrationPhase.TIMED_OUT
-            self._charge.set_limit(self._restore_limit)
-            if self._on_done:
-                self._on_done("timed_out", None)
+            if self._phase != CalibrationPhase.IDLE and self._phase != CalibrationPhase.COMPLETE:
+                self._charge.set_limit(self._restore_limit)
+                self._phase = CalibrationPhase.TIMED_OUT
+                if self._on_done:
+                    self._on_done("timed_out", None)
         except asyncio.CancelledError:
             pass

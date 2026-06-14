@@ -18,6 +18,8 @@ import {
 } from "@decky/api"
 import { useState, useEffect } from "react";
 import { FaBatteryThreeQuarters, FaTimesCircle, FaExclamationTriangle, FaInfoCircle } from "react-icons/fa";
+import { HealthChart } from "./components/HealthChart";
+import { PresetSelector } from "./components/PresetSelector";
 
 const getBatteryStatus = callable<[], {
   capacity: number | null;
@@ -81,51 +83,6 @@ function InfoTip({ text }: { text: string }) {
     >
       <FaInfoCircle size={12} color="#888" />
     </span>
-  );
-}
-
-function HealthChart({ data, width, height }: { data: { recorded_at: string; health_pct: number }[]; width: number; height: number }) {
-  if (data.length < 2) {
-    return <div style={{ color: "#666", fontSize: "12px", padding: "8px 0" }}>Not enough data for chart</div>;
-  }
-
-  const pad = { top: 16, right: 8, bottom: 24, left: 40 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-
-  const pts = data.slice().reverse();
-  const minH = Math.min(...pts.map(p => p.health_pct)) - 2;
-  const maxH = Math.max(...pts.map(p => p.health_pct)) + 2;
-  const hRange = maxH - minH || 1;
-
-  const xScale = (i: number) => pad.left + (i / (pts.length - 1)) * plotW;
-  const yScale = (v: number) => pad.top + plotH - ((v - minH) / hRange) * plotH;
-
-  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"}${xScale(i).toFixed(1)},${yScale(p.health_pct).toFixed(1)}`).join("");
-
-  const yTicks = 4;
-  const yLabels: number[] = [];
-  for (let i = 0; i <= yTicks; i++) yLabels.push(minH + (hRange * i) / yTicks);
-
-  return (
-    <svg width={width} height={height} style={{ display: "block" }}>
-      {yLabels.map((v) => (
-        <g key={v}>
-          <line x1={pad.left} y1={yScale(v)} x2={width - pad.right} y2={yScale(v)}
-            stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
-          <text x={pad.left - 4} y={yScale(v) + 4} textAnchor="end" fill="#666" fontSize={10}>
-            {v.toFixed(0)}%
-          </text>
-        </g>
-      ))}
-      <path d={pathD} fill="none" stroke="#4ade80" strokeWidth={2} strokeLinejoin="round" />
-      {pts.map((p, i) => (
-        <circle key={i} cx={xScale(i)} cy={yScale(p.health_pct)} r={2.5} fill="#4ade80" />
-      ))}
-      <text x={width / 2} y={height - 2} textAnchor="middle" fill="#666" fontSize={10}>
-        Time →
-      </text>
-    </svg>
   );
 }
 
@@ -460,17 +417,6 @@ function Content() {
   const sliderMin = extendedRange ? EXTENDED_MIN : NORMAL_MIN;
   const sliderNotchCount = Math.floor((100 - sliderMin) / 5) + 1;
 
-  const presetOptions = [
-    ...Object.entries(presets?.built_in ?? {}).map(([name, val]) => ({
-      data: name,
-      label: `${name} (${val}%)`,
-    })),
-    ...Object.entries(presets?.custom ?? {}).map(([name, val]) => ({
-      data: name,
-      label: `${name} (${val}%)`,
-    })),
-  ];
-
   const rateLabel = chargeRate > 0
     ? `${(chargeRate / 1e6).toFixed(2)} A`
     : "No limit";
@@ -571,15 +517,9 @@ function Content() {
         </div>
       </PanelSectionRow>
 
-      {presetOptions.length > 0 && (
+      {presets.built_in && Object.keys(presets.built_in).length > 0 && (
         <PanelSectionRow>
-          <DropdownItem
-            label="Presets"
-            description="Apply a charge limit preset"
-            rgOptions={presetOptions}
-            selectedOption={""}
-            onChange={handlePreset}
-          />
+          <PresetSelector presets={presets} onApply={handlePreset} />
         </PanelSectionRow>
       )}
       <PanelSectionRow>
