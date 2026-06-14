@@ -1,0 +1,19 @@
+{
+  "name": "Battery Calibrator",
+  "author": "Yogendra96",
+  "flags": ["_root"],
+  "api_version": 1,
+  "version": "0.1.0",
+  "publish": {
+    "tags": [
+      "battery",
+      "calibration",
+      "charge-limit",
+      "power-management",
+      "heat-protection",
+      "health-monitoring"
+    ],
+    "description": "Intelligent battery charge management for Steam Deck. Set charge limits, run periodic calibration cycles, monitor health trends, and protect against overheating.",
+    "image": "https://raw.githubusercontent.com/Yogendra96/decky-battery-calibrator/main/assets/icon.png"
+  }
+}

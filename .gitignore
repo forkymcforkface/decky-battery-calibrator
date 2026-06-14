@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+.pnpm-store/
+.yalc/
+yalc.lock
+
+# Build output
+dist/
+out/
+backend/out
+
+# IDE
+.idea/
+*.iml
+.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Environment
+.env
+*.log
+*.gz
+*.swp
+
+# Decky
+decky_plugin.py
+cli/
+cli/*
+cli/decky
