@@ -37,6 +37,8 @@ const getBatteryStatus = callable<[], {
   charge_rate_amps: number | null;
   temp_celsius: number | null;
   thermal_throttled: boolean;
+  pd_is_contract?: boolean;
+  pd_watts?: number | null;
 }>("get_battery_status");
 
 const setChargeLimit = callable<[percent: number], boolean>("set_charge_limit");
@@ -58,7 +60,7 @@ const getPresets = callable<[], { built_in: Record<string, number>; custom: Reco
 const applyPreset = callable<[name: string], boolean>("apply_preset");
 const pauseCharging = callable<[], boolean>("pause_charging");
 const topUp = callable<[], boolean>("top_up");
-const getChargeRate = callable<[], { available: boolean; microamps: number; amps: number }>("get_charge_rate");
+const getChargeRate = callable<[], { available: boolean; microamps: number; amps: number; max_microamps?: number }>("get_charge_rate");
 const setChargeRateLimit = callable<[microamps: number], boolean>("set_charge_rate");
 
 const getHistory = callable<[], { snapshots: any[]; calibrations: any[] }>("get_history");
@@ -158,7 +160,7 @@ function BatteryWidget() {
               <span> · {data.temp_celsius}°C</span>
             )}
             {data?.ac_connected && data?.pd_watts != null && (
-              <span> · {data.pd_watts} W in</span>
+              <span> · {data.pd_watts} W {data.pd_is_contract ? "PD contract" : "in"}</span>
             )}
           </div>
         </div>
@@ -183,6 +185,8 @@ function Content() {
   const [chargeRate, setChargeRate] = useState<number>(2000000);
   const [extendedRange, setExtendedRange] = useState<boolean>(false);
   const [rateAvailable, setRateAvailable] = useState<boolean>(false);
+  const [rateMax, setRateMax] = useState<number>(RATE_MAX);
+  const rateNotches = Math.floor((rateMax - RATE_MIN) / RATE_STEP);
   const [history, setHistory] = useState<{ snapshots: any[]; calibrations: any[] }>({ snapshots: [], calibrations: [] });
   const [sailingMode, setSailingMode] = useState<{ enabled: boolean; low: number; high: number }>({ enabled: false, low: 70, high: 80 });
   const [chartWidth, setChartWidth] = useState<number>(300);
@@ -218,6 +222,7 @@ function Content() {
     if (b?.charge_limit) setLimit(b.charge_limit);
     if (r?.available) {
       setRateAvailable(true);
+      setRateMax(r.max_microamps ?? RATE_MAX);
       if (r.microamps > 0) setChargeRate(r.microamps);
     }
     if (s?.extended_range_enabled) setExtendedRange(true);
@@ -553,17 +558,17 @@ function Content() {
             {battery.health != null && <div>Health: {battery.health}%</div>}
             {battery.cycle_count != null && <div>Cycles: {battery.cycle_count}</div>}
             {battery.charge_full != null && (
-              <div>Full: {(battery.charge_full / 1e6).toFixed(0)} mAh</div>
+              <div>Full: {(battery.charge_full / 1e3).toFixed(0)} mAh</div>
             )}
             {battery.charge_full_design != null && battery.charge_full_design !== battery.charge_full && (
-              <div>Design: {(battery.charge_full_design / 1e6).toFixed(0)} mAh</div>
+              <div>Design: {(battery.charge_full_design / 1e3).toFixed(0)} mAh</div>
             )}
             {battery.charge_rate_available && battery.charge_rate_amps != null && (
               <div>Rate: {battery.charge_rate_amps.toFixed(2)} A</div>
             )}
             {battery.temp_celsius != null && <div>Temp: {battery.temp_celsius}°C</div>}
             {battery.ac_connected && battery.pd_watts != null && (
-              <div>Input: {battery.pd_watts} W</div>
+              <div>{battery.pd_is_contract ? "USB-PD contract" : "Input"}: {battery.pd_watts} W</div>
             )}
           </div>
         </PanelSectionRow>
@@ -576,14 +581,14 @@ function Content() {
             description={rateLabel}
             value={chargeRate}
             min={RATE_MIN}
-            max={RATE_MAX}
+            max={rateMax}
             step={RATE_STEP}
             onChange={handleRateChange}
-            notchCount={Math.floor((RATE_MAX - RATE_MIN) / RATE_STEP) + 1}
+            notchCount={rateNotches + 1}
             notchLabels={[
               { notchIndex: 0, label: "0.5A" },
-              { notchIndex: Math.floor((RATE_MAX - RATE_MIN) / RATE_STEP / 2), label: "1.75A" },
-              { notchIndex: Math.floor((RATE_MAX - RATE_MIN) / RATE_STEP), label: "3A" },
+              { notchIndex: Math.floor(rateNotches / 2), label: `${(RATE_MIN + Math.floor(rateNotches / 2) * RATE_STEP) / 1e6}A` },
+              { notchIndex: rateNotches, label: `${rateMax / 1e6}A` },
             ]}
           />
         </PanelSectionRow>

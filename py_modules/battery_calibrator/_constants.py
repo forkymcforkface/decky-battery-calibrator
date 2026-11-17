@@ -1,5 +1,6 @@
 import enum
 import os
+from pathlib import Path
 
 BATTERY_SYSFS = "/sys/class/power_supply/BAT1"
 AC_SYSFS = "/sys/class/power_supply/ACAD/online"
@@ -24,6 +25,21 @@ try:
                     break
 except (FileNotFoundError, PermissionError, OSError):
     pass
+
+POWER_SUPPLIES = Path("/sys/class/power_supply")
+ARMDECK_BATTERY = next(POWER_SUPPLIES.glob("bq27411-*"), None)
+ARMDECK_CHARGER = POWER_SUPPLIES / "pm8150b-charger"
+ARMDECK_POWER_ROLES = Path("/sys/class/typec")
+ARMDECK_AC_SUPPLY = None
+
+if ARMDECK_BATTERY is not None:
+    BATTERY_SYSFS = str(ARMDECK_BATTERY)
+    ARMDECK_AC_SUPPLY = next(POWER_SUPPLIES.glob("tcpm-source-psy-*"), None)
+    AC_SYSFS = str(ARMDECK_AC_SUPPLY / "online") if ARMDECK_AC_SUPPLY else None
+    if ARMDECK_AC_SUPPLY:
+        PD_CURRENT_SYSFS = str(ARMDECK_AC_SUPPLY / "current_now")
+        PD_VOLTAGE_SYSFS = str(ARMDECK_AC_SUPPLY / "voltage_now")
+    CHARGE_RATE_SYSFS = str(ARMDECK_CHARGER / "constant_charge_current")
 
 DBUS_SERVICE = "com.steampowered.SteamOSManager1"
 DBUS_PATH = "/com/steampowered/SteamOSManager1"

@@ -3,6 +3,8 @@ from dataclasses import dataclass
 
 from battery_calibrator._constants import (
     AC_SYSFS,
+    ARMDECK_BATTERY,
+    ARMDECK_POWER_ROLES,
     BATTERY_SYSFS,
     PD_CURRENT_SYSFS,
     PD_VOLTAGE_SYSFS,
@@ -35,6 +37,7 @@ class BatteryReader:
         self._ac = AC_SYSFS
         self._pd_current_path = PD_CURRENT_SYSFS
         self._pd_voltage_path = PD_VOLTAGE_SYSFS
+        self.pd_is_contract = ARMDECK_BATTERY is not None
 
     def _read(self, filename: str) -> str | None:
         path = os.path.join(self._base, filename)
@@ -86,8 +89,22 @@ class BatteryReader:
         if pd_voltage_mv and pd_current_ma:
             pd_watts = round(pd_voltage_mv * pd_current_ma / 1_000_000, 1)
 
-        ac_raw = self._read(self._ac)
-        ac_connected = ac_raw == "1"
+        ac_connected = self._read_path_int(self._ac) == 1
+        if self.pd_is_contract:
+            ac_connected = ac_connected and any(
+                role in ("sink", "source [sink]")
+                for path in ARMDECK_POWER_ROLES.glob("port*/power_role")
+                if (role := self._read(str(path))) is not None
+            )
+            if ac_connected:
+                pd_current_ma = pd_current_ma // 1000 if pd_current_ma is not None else None
+                pd_voltage_mv = pd_voltage_mv // 1000 if pd_voltage_mv is not None else None
+            else:
+                pd_current_ma = pd_voltage_mv = None
+            pd_watts = (
+                round(pd_voltage_mv * pd_current_ma / 1_000_000, 1)
+                if pd_voltage_mv and pd_current_ma else None
+            )
 
         temp_celsius: float | None = None
         if temp_raw is not None:

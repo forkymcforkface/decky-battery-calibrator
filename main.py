@@ -17,6 +17,10 @@ from battery_calibrator import (
     create_charge_control,
 )
 
+from battery_calibrator._constants import AC_SYSFS, BATTERY_SYSFS
+from battery_calibrator._exceptions import ChargeControlError
+from battery_calibrator.charge_control import PM8150BChargeControl
+
 import decky
 
 READLINE_TIMEOUT = 30
@@ -34,6 +38,8 @@ class Plugin:
         self.settings = SettingsManager(decky.DECKY_PLUGIN_SETTINGS_DIR)
         self.battery = BatteryReader()
         self.charge = create_charge_control()
+        if isinstance(self.charge, PM8150BChargeControl) and self.charge.get_limit() is not None:
+            self.charge.set_limit(self.settings.get("charge_limit", 80))
         self.history = HistoryDatabase(decky.DECKY_PLUGIN_RUNTIME_DIR)
 
         self.calibration = CalibrationEngine(self.charge, self.battery)
@@ -64,7 +70,13 @@ class Plugin:
         decky.logger.info("Battery Calibrator loaded")
 
     async def _unload(self):
-        self.calibration.cancel()
+        if not isinstance(self.charge, PM8150BChargeControl) or self.calibration.is_active:
+            self.calibration.cancel()
+        if isinstance(self.charge, PM8150BChargeControl):
+            try:
+                self.charge.release()
+            except ChargeControlError as error:
+                decky.logger.warning(str(error))
         self._top_up_restore = None
         if self._monitor_task and not self._monitor_task.done():
             self._monitor_task.cancel()
@@ -76,6 +88,9 @@ class Plugin:
         proc: asyncio.subprocess.Process | None = None
         udev_retries = 0
         using_polling = False
+        supplies = [os.fsencode(os.path.basename(BATTERY_SYSFS))]
+        if AC_SYSFS and isinstance(self.charge, PM8150BChargeControl):
+            supplies.append(os.fsencode(os.path.basename(os.path.dirname(AC_SYSFS))))
 
         async def process_snapshot(snap) -> None:
             await self.calibration.handle_battery_update(snap)
@@ -86,6 +101,11 @@ class Plugin:
             self.thermal.handle_temperature(snap)
             if not self.calibration.is_active and self._top_up_restore is None:
                 self._apply_smart_charge(snap)
+            if isinstance(self.charge, PM8150BChargeControl):
+                try:
+                    self.charge.refresh(snap)
+                except ChargeControlError as error:
+                    decky.logger.warning(str(error))
             self._record_snapshot(snap)
             d = self._snap_to_dict(snap)
             if d != self._last_battery:
@@ -138,6 +158,8 @@ class Plugin:
                             proc.stdout.readline(), timeout=READLINE_TIMEOUT
                         )
                     except TimeoutError:
+                        if isinstance(self.charge, PM8150BChargeControl):
+                            await process_snapshot(self.battery.snapshot())
                         continue
 
                     if not line:
@@ -145,7 +167,7 @@ class Plugin:
                         udev_retries += 1
                         break
 
-                    if b"BAT1" in line and b"change" in line:
+                    if b"change" in line and any(supply in line for supply in supplies):
                         now = asyncio.get_event_loop().time()
                         if now - self._last_event_time < EVENT_DEBOUNCE_S:
                             continue
@@ -205,6 +227,7 @@ class Plugin:
             "charge_rate_amps": self.rate_ctrl.get_rate_amps(),
             "temp_celsius": snap.temp_celsius,
             "thermal_throttled": self.thermal.throttled,
+            "pd_is_contract": getattr(self.battery, "pd_is_contract", False) is True,
             "pd_current_ma": snap.pd_current_ma,
             "pd_voltage_mv": snap.pd_voltage_mv,
             "pd_watts": snap.pd_watts,
@@ -339,6 +362,7 @@ class Plugin:
         return {
             "available": self.rate_ctrl.available,
             "microamps": self.rate_ctrl.get_rate(),
+            "max_microamps": self.rate_ctrl.max_rate,
             "amps": self.rate_ctrl.get_rate_amps(),
         }
 
